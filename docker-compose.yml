@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: app-server
+    ports:
+      - "8080:8080"
+
+  web1:
+    build: ./frontend
+    container_name: web-server-1
+    environment:
+      - BACKEND_URL=http://app-server:8080
+      - PORT=3000
+    depends_on:
+      - backend
+
+  web2:
+    build: ./frontend
+    container_name: web-server-2
+    environment:
+      - BACKEND_URL=http://app-server:8080
+      - PORT=3000
+    depends_on:
+      - backend
