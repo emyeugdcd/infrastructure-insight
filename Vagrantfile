@@ -1,0 +1,25 @@
+Vagrant.configure("2") do |config|
+  servers = [
+    ["loadbalancer", "192.168.56.11", 50022],
+    ["webserver1", "192.168.56.12", 50023],
+    ["webserver2", "192.168.56.13", 50024],
+    ["appserver", "192.168.56.14", 50025],
+    ["backup", "192.168.56.15", 50026]
+  ]
+
+  servers.each do |name, ip, ssh_port|
+    config.vm.define name do |node|
+      node.vm.box = "bento/ubuntu-22.04"
+      node.vm.hostname = name
+      node.vm.network "private_network", ip: ip
+      
+      # Overriding Vagrant's core default 50022 SSH mapping
+      node.vm.network "forwarded_port", guest: 22, host: ssh_port, id: "ssh", auto_correct: true
+
+      node.vm.provider "vmware_desktop" do |v|
+        v.vmx["memsize"] = name == "appserver" ? "2048" : "1024"
+        v.vmx["numvcpus"] = name == "loadbalancer" ? "2" : "1"
+      end
+    end
+  end
+end

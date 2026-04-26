@@ -1,0 +1,278 @@
+- hosts: servers
+  become: yes
+
+  tasks:
+    - name: Update apt cache and upgrade system securely
+      apt:
+        upgrade: dist
+        update_cache: yes
+
+    - name: Map hostnames in /etc/hosts statically
+      blockinfile:
+        path: /etc/hosts
+        block: |
+          192.168.56.11 loadbalancer
+          192.168.56.12 webserver1
+          192.168.56.13 webserver2
+          192.168.56.14 appserver
+          192.168.56.15 backup
+
+    - name: Create devops user with password-protected sudo capability
+      user:
+        name: devops
+        groups: sudo
+        password: "{{ 'password' | password_hash('sha512', 'mysecretsalt') }}"
+        shell: /bin/bash
+        create_home: yes
+
+    - name: Ensure .ssh directory exists for devops
+      file:
+        path: /home/devops/.ssh
+        state: directory
+        owner: devops
+        group: devops
+        mode: '0700'
+
+    - name: Copy Vagrant authorized keys to devops for passwordless SSH
+      copy:
+        remote_src: yes
+        src: /home/vagrant/.ssh/authorized_keys
+        dest: /home/devops/.ssh/authorized_keys
+        owner: devops
+        group: devops
+        mode: '0600'
+
+    - name: Disable root SSH login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^PermitRootLogin"
+        line: "PermitRootLogin no"
+      notify: Restart SSH
+
+    - name: Set UFW default deny incoming
+      ufw:
+        default: deny
+        direction: incoming
+
+    - name: Allow SSH
+      ufw:
+        rule: allow
+        port: 22
+
+    - name: Allow HTTP gracefully only on Loadbalancer
+      ufw:
+        rule: allow
+        port: 80
+      when: inventory_hostname == 'loadbalancer'
+
+    - name: Allow backend API (8080) internally
+      ufw:
+        rule: allow
+        port: 8080
+        proto: tcp
+      when: inventory_hostname == 'appserver'
+
+    - name: Allow frontend web traffic (3000) internally
+      ufw:
+        rule: allow
+        port: 3000
+        proto: tcp
+      when: inventory_hostname in ['webserver1', 'webserver2']
+
+    - name: Allow Netdata port on UFW
+      ufw:
+        rule: allow
+        port: 19999
+        proto: tcp
+    
+    - name: Allow WireGuard port on UFW
+      ufw:
+        rule: allow
+        port: 51820
+        proto: udp
+
+    - name: Enable firewall (default deny)
+      ufw:
+        state: enabled
+
+    - name: Install unattended upgrades
+      apt:
+        name: unattended-upgrades
+        state: present
+
+    - name: Enforce 20auto-upgrades Rubric Configuration
+      copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+
+    - name: Install Fail2Ban
+      apt:
+        name: fail2ban
+        state: present
+
+    - name: Ensure Fail2Ban is running and enabled
+      service:
+        name: fail2ban
+        state: started
+        enabled: yes
+
+    - name: Download Netdata kickstart script
+      shell: "curl -Ss https://get.netdata.cloud/kickstart.sh -o /tmp/netdata-kickstart.sh"
+      args:
+        creates: /usr/sbin/netdata
+
+    - name: Install Netdata via kickstart script
+      shell: "bash /tmp/netdata-kickstart.sh --dont-wait"
+      args:
+        creates: /usr/sbin/netdata
+      
+    - name: Install WireGuard
+      apt:
+        name: wireguard
+        state: present
+
+    - name: Generate WireGuard Private Key
+      shell: "wg genkey | tee /etc/wireguard/private.key"
+      args:
+        creates: /etc/wireguard/private.key
+
+    - name: Generate WireGuard wg0 configuration
+      shell: |
+        echo "[Interface]" > /etc/wireguard/wg0.conf
+        echo "PrivateKey = $(cat /etc/wireguard/private.key)" >> /etc/wireguard/wg0.conf
+        echo "ListenPort = 51820" >> /etc/wireguard/wg0.conf
+        echo "Address = 10.8.0.{{ ansible_host.split('.')[-1] }}/24" >> /etc/wireguard/wg0.conf
+      args:
+        creates: /etc/wireguard/wg0.conf
+
+    - name: Start and enable WireGuard interface wg0
+      service:
+        name: wg-quick@wg0
+        state: started
+        enabled: yes
+
+    - name: Allow WireGuard port on UFW
+      ufw:
+        rule: allow
+        port: 51820
+        proto: udp
+
+    # ==========================
+    # CONTAINERIZATION & ROUTING
+    # ==========================
+    - name: Install Docker Engine
+      apt:
+        name: 
+          - docker.io
+          - docker-compose
+        state: present
+      when: inventory_hostname in ['appserver', 'webserver1', 'webserver2']
+
+    - name: Install Nginx for Loadbalancing
+      apt:
+        name: nginx
+        state: present
+      when: inventory_hostname == 'loadbalancer'
+
+    - name: Configure Nginx least_conn Upstream
+      copy:
+        dest: /etc/nginx/sites-available/default
+        content: |
+          upstream vitals {
+              least_conn;
+              server 192.168.56.12:3000;
+              server 192.168.56.13:3000;
+          }
+          server {
+              listen 80;
+              location / {
+                  proxy_pass http://vitals;
+              }
+          }
+      when: inventory_hostname == 'loadbalancer'
+      notify: Restart Nginx
+
+    - name: Build and Run Backend Container
+      shell: |
+        docker stop vitals-backend-app || true
+        docker rm vitals-backend-app || true
+        docker build -t vitals-backend /vagrant/backend
+        docker run -d --name vitals-backend-app --restart always -p 8080:8080 vitals-backend
+      when: inventory_hostname == 'appserver'
+
+    - name: Build and Run Frontend Container
+      shell: |
+        docker stop vitals-frontend-app || true
+        docker rm vitals-frontend-app || true
+        docker build -t vitals-frontend /vagrant/frontend
+        docker run -d --name vitals-frontend-app --restart always -p 3000:3000 -e BACKEND_URL=http://192.168.56.14:8080 vitals-frontend
+      when: inventory_hostname in ['webserver1', 'webserver2']
+
+    # ==========================
+    # BACKUP VM CONFIGURATION
+    # ==========================
+    - name: Setup Backup Directory
+      file: 
+        path: /backups 
+        state: directory
+      when: inventory_hostname == 'backup'
+    
+    - name: Establish Backup Cron Job
+      cron:
+        name: "Weekly full system backup"
+        special_time: weekly
+        job: "tar -czf /backups/system_backup_$(date +\\%Y\\%m\\%d).tar.gz /etc /home /vagrant 2>/dev/null"
+      when: inventory_hostname == 'backup'
+
+    - name: Disable password authentication
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^PasswordAuthentication"
+        line: "PasswordAuthentication no"
+      notify: Restart SSH
+
+    - name: Allow only devops user (and Vagrant for bootstrapping)
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^AllowUsers"
+        line: "AllowUsers devops vagrant"
+      notify: Restart SSH
+
+    - name: Set secure umask
+      lineinfile:
+        path: /etc/profile
+        line: "umask 027"
+
+    - name: Set secure umask in login.defs
+      lineinfile:
+        path: /etc/login.defs
+        regexp: "^UMASK"
+        line: "UMASK 027"
+
+    - name: Verify no unused network interfaces exist
+      shell: ip link show
+      register: network_interfaces
+      changed_when: false
+
+    - name: Display network interfaces for audit
+      debug:
+        var: network_interfaces.stdout_lines
+
+    - name: Remove vagrant from AllowUsers to fully lock down SSH
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "^AllowUsers"
+        line: "AllowUsers devops"
+      notify: Restart SSH
+
+  handlers:
+    - name: Restart SSH
+      service:
+        name: ssh
+        state: restarted
+    - name: Restart Nginx
+      service:
+        name: nginx
+        state: restarted

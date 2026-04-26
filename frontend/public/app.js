@@ -20,26 +20,20 @@ async function fetchMetrics() {
   }
 }
 
-function fmtUptime(seconds) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  return `${h}h ${m}m`;
-}
-
 function render(d) {
   document.getElementById('val-hostname').textContent = d.hostname;
-  document.getElementById('val-os').textContent = `${d.os} — ${d.platform}`;
-  document.getElementById('val-uptime').textContent = fmtUptime(d.uptime_seconds);
+  document.getElementById('val-os').textContent = `${d.os} — ${d.kernel_info}`;
+  document.getElementById('val-uptime').textContent = d.uptime;
   document.getElementById('val-go').textContent = d.go_version;
 
   document.getElementById('val-cpu-model').textContent = d.cpu_model;
   document.getElementById('val-cpu-cores').textContent = `${d.cpu_cores} cores`;
-  document.getElementById('val-cpu-pct').textContent = `${d.cpu_usage_percent.toFixed(1)}%`;
+  document.getElementById('val-cpu-pct').textContent = `${d.cpu_usage_percent.toFixed(1)}% (BPM)`;
   document.getElementById('bar-cpu').style.width = `${d.cpu_usage_percent}%`;
 
   document.getElementById('val-mem-used').textContent = `${d.mem_used_mb} MB used`;
   document.getElementById('val-mem-total').textContent = `of ${d.mem_total_mb} MB`;
-  document.getElementById('val-mem-pct').textContent = `${d.mem_used_percent.toFixed(1)}%`;
+  document.getElementById('val-mem-pct').textContent = `${d.mem_used_percent.toFixed(1)}% (SpO2)`;
   document.getElementById('bar-mem').style.width = `${d.mem_used_percent}%`;
 
   document.getElementById('val-timestamp').textContent = new Date(d.timestamp).toLocaleString();
