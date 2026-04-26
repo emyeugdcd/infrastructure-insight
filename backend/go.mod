@@ -1,3 +1,3 @@
-module infrastructure-insight/backend
+module backend
 
 go 1.22
