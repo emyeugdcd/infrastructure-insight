@@ -2,6 +2,11 @@
   become: yes
 
   tasks:
+
+    # ==========================
+    # SYSTEM CONFIGURATION
+    # ==========================
+    
     - name: Update apt cache and upgrade system securely
       apt:
         upgrade: dist
@@ -162,6 +167,7 @@
     # ==========================
     # CONTAINERIZATION & ROUTING
     # ==========================
+
     - name: Install Docker Engine
       apt:
         name: 
