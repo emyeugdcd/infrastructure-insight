@@ -19,6 +19,66 @@ The goal of this project is to successfully deploy a distributed an application 
 
 ## Setup and Installation Instructions
 *Note: This application is designed to be hosted on Virtual Machines deployed by Vagrant.*
+### Getting Started
+Since this project is done on my MAC, it features a specialized Apple Silicon (ARM64) architecture flow. If you are also using a MAC, make sure your machine has QEMU and Vagrant ready before spinning up the infrastructure.
+
+### 1. Prerequisites & Installation
+
+To run this project, you will need the following core tools installed on your operating system:
+- **Vagrant**: The orchestrator for the virtual machines.
+- **Ansible**: The configuration management tool used to provision the servers.
+- **A Hypervisor**: Either VirtualBox (Windows), VMware Fusion (Mac Standard), or QEMU (Mac Fallback).
+
+#### 🪟 For Windows (or Intel Macs)
+Windows runs natively on x86 architecture. VirtualBox is the professional standard for this stack.
+1. Install **VirtualBox** and **Vagrant** directly from their official websites.
+2. Install **Windows Subsystem for Linux (WSL)** (Windows only) because Ansible runs best in a Linux environment:
+   ```powershell
+   # Run this in PowerShell as Administrator
+   wsl --install
+   ```
+   *Then, open your WSL Ubuntu terminal and install Ansible:*
+   ```bash
+   sudo apt update && sudo apt install ansible -y
+   ```
+
+#### 🍎 For macOS (Apple Silicon M1/M2/M3)
+Because VirtualBox does not natively support ARM architecture, you must pick one of two hypervisor paths:
+
+**Path A: VMware Fusion Pro (Highly Recommended)**
+This allows you to fully complete the networking milestones.
+1. Download **VMware Fusion Pro** (Free for personal use via Broadcom) and install the **Vagrant VMware Utility**.
+2. Install Vagrant and the VMware plugin:
+   ```bash
+   brew install hashicorp/tap/vagrant
+   vagrant plugin install vagrant-vmware-desktop
+   ```
+
+**Path B: QEMU (Lightweight Fallback)**
+Use this if you don't want to install VMWare, but note that the core **Private Networking** milestone will skip the subnets entirely.
+1. Install Vagrant and QEMU:
+   ```bash
+   brew install hashicorp/tap/vagrant
+   brew install qemu
+   vagrant plugin install vagrant-qemu
+   ```
+
+#### For Windows (or Intel Macs)
+Windows and older Macs run natively on x86 architecture, which means VirtualBox is the standard hypervisor to use.
+1. Install **VirtualBox** and **Vagrant** directly from their official websites.
+2. Install **Windows Subsystem for Linux (WSL)** (Windows only) because Ansible runs best in a Linux environment:
+   ```powershell
+   # Run this in PowerShell as Administrator
+   wsl --install
+   ```
+
+---
+After successfully setting up the environment and installing the prerequisites, you can provision the infrastructure with the following commands:
+
+Go to the project directory:
+```
+cd infrastructure-insight
+```
 
 1. **Provision Infrastructure:**
 Ensure your 5-node cluster (`loadbalancer`, `webserver1`, `webserver2`, `appserver`, `backup`) is live via Vagrant with the command in the project directory:
