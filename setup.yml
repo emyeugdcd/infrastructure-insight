@@ -95,6 +95,7 @@
         rule: allow
         port: 51820
         proto: udp
+      when: inventory_hostname == 'loadbalancer'
 
     - name: Enable firewall (default deny)
       ufw:
@@ -157,12 +158,6 @@
         name: wg-quick@wg0
         state: started
         enabled: yes
-
-    - name: Allow WireGuard port on UFW
-      ufw:
-        rule: allow
-        port: 51820
-        proto: udp
 
     # ==========================
     # CONTAINERIZATION & ROUTING
